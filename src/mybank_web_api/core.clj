@@ -23,7 +23,7 @@
 ;  []
 ;  )
 
-;criar saldo suficiente
+;criar saldo insuficiente
 ;;
 
 (defn get-saldo [request]
@@ -31,23 +31,35 @@
     {:status 200 :body {:saldo (id-conta @contas "conta inválida!")}}))
 ;;CRIAR CASO NAO EXISTA
 
+(defn invalid-account
+  [request]
+  (let [id-conta (-> request :path-params :id keyword)
+        msg-invalid {:status  403
+                     :headers {"Content-Type" "text/plain"}
+                     :body    "Conta inválida"}]
+    (when (not (contains? request id-conta))
+      msg-invalid)))
+
+;(defn valid-account [])
+
+(def msg-invalid-account
+  {:status  403
+   :headers {"Content-Type" "text/plain"}
+   :body    "Conta inválida"})
 
 (defn saque
   [request]
   (let [id-conta (-> request :path-params :id keyword)
-        valor-deposito (-> request :body slurp parse-double)
+        valor-saque (-> request :body slurp parse-double)
         SIDE-EFFECT! (try
-                       (swap! contas (fn [m] (update-in m [id-conta :saldo] #(- % valor-deposito))))
+                       (swap! contas (fn [m] (update-in m [id-conta :saldo] #(- % valor-saque))))
                        {:status  200
                         :headers {"Content-Type" "text/plain"}
                         :body    {:id-conta   id-conta
                                   :novo-saldo (id-conta @contas)}}
                        (catch Exception e
-                         {:status  418
-                          :headers {"Content-Type" "text/plain"}
-                          :body    "Conta inválida"}))]
+                         msg-invalid-account))]
     SIDE-EFFECT!))
-
 
 (defn make-deposit [request]
   (let [id-conta (-> request :path-params :id keyword)
@@ -59,9 +71,7 @@
                         :body    {:id-conta   id-conta
                                   :novo-saldo (id-conta @contas)}}
                        (catch Exception e
-                         {:status  418
-                          :headers {"Content-Type" "text/plain"}
-                          :body    "Conta inválida"}))]
+                         msg-invalid-account))]
     SIDE-EFFECT!))
 
 (def routes
@@ -80,22 +90,20 @@
 (defonce server (atom nil))
 
 (defn start []
-  (reset! server (http/start (create-server))))
+  (try
+    (reset! server (http/start (create-server)))
+    (catch Exception e
+      e)))
 
 (defn stop []
-  (http/stop @server))
-
-(defn reset-server
-  []
   (try
-    (stop)
+    (http/stop @server)
     (catch Exception e
-      e))
-  ((try
-     (start)
-     (catch Exception e
-       e)))
-  )
+      e)))
+
+(defn reset-server []
+  (stop)
+  (start))
 
 (defn test-request [server verb url]
   (test-http/response-for (::http/service-fn @server) verb url))
